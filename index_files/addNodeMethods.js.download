@@ -1,0 +1,724 @@
+let textTransformNames = [];
+
+function __addNodeMethods(node) {
+  // REMEMBER TO UPDATE stringAndNumberModifications and arrayModifications if you add more methods
+
+  Object.defineProperty(node, "$odds", {get:__$oddsMethod, configurable:true});
+  Object.defineProperty(node, "getOdds", {get:__$oddsMethod, configurable:true});
+
+  Object.defineProperty(node, "getName", {get:function() { return this.$text; }, configurable:true});
+  Object.defineProperty(node, "getParent", {get:function() { return this.$parent; }, configurable:true});
+
+  Object.defineProperty(node, "getLength", {get:function() { return Object.keys(this).length; }, configurable:true});
+  Object.defineProperty(node, "getRawListText", {get:function() { return this.$perchanceCode; }, configurable:true});
+
+  // Workaround for the problem of a node not being resolved (mainly for use in functions) (I put this in the execution properties of the proxy)
+  Object.defineProperty(node, "getSelf", {get:function() { return this; }, configurable:true});
+  Object.defineProperty(node, "getPropertyKeys", {get:function() { return this.$valueChildren.slice(0); }, configurable:true});
+  Object.defineProperty(node, "getPropertyNames", {get:function() { return this.$valueChildren.slice(0); }, configurable:true});
+  Object.defineProperty(node, "getChildNames", {get:function() { return this.$children.slice(0); }, configurable:true});
+
+  // Object.defineProperty(node, "isConsumable", {value:false, writable:true, configurable:true})
+
+  Object.defineProperty(node, "toString", {value:__toStringMethod, configurable:true});
+  
+  // we need this otherwise if they have:
+  //   num = {1-1000}
+  // and they type [num.toLocaleString()], the JS engine calls toString on the object (since that's the default thing to do with objects, I guess), which results in a string.
+  Object.defineProperty(node, "toLocaleString", {value:function(...args) {
+    let result = String(this.toString()); // String()-ing because apparently toString can return a number?? no time to look into it right now
+    if(String(Number(result)) === result) { 
+      result = Number(result);
+    }
+    return result.toLocaleString(...args);
+  }, writable:true, configurable:true});
+
+  Object.defineProperty(node, "evaluateItem", {get:function() {
+    return this.valueOf();
+  }, configurable:true});
+
+
+  // TODO: add a setter method for $odds which changes the node data? wait, shouldn't $odds just return the string? or not?
+
+  // TODO: these need fixing (see funciton declaration for notes)
+  // Object.defineProperty(node, "$addChild", {get:$addChildMethod});
+  // Object.defineProperty(node, "$removeChild", {get:$removeChildMethod});
+
+  Object.defineProperty(node, "selectOne", {get:__selectOneMethod, configurable:true});
+  Object.defineProperty(node, "selectAll", {get:__selectAllMethod, configurable:true});
+  Object.defineProperty(node, "selectMany", {value:__selectManyMethod, writable:true, configurable:true});
+  Object.defineProperty(node, "selectUnique", {value:__selectUniqueMethod, writable:true, configurable:true});
+
+  Object.defineProperty(node, "joinItems", {value:__joinItemsMethod, writable:true, configurable:true});
+
+  Object.defineProperty(node, "valueOf", {value:__valueOfMethod, writable:true, configurable:true});
+
+  //Object.defineProperty(node, "shuffleItems", {value:shuffleMethod, configurable:true});
+
+  // TEXT TRANSFORMS:
+  Object.defineProperty(node, "pluralForm", {get:__pluralFormMethod, configurable:true});
+  Object.defineProperty(node, "singularForm", {get:__singularFormMethod, configurable:true});
+  Object.defineProperty(node, "pastTense", {get:__pastTenseMethod, configurable:true});
+  Object.defineProperty(node, "presentTense", {get:__presentTenseMethod, configurable:true});
+  Object.defineProperty(node, "futureTense", {get:__futureTenseMethod, configurable:true});
+  Object.defineProperty(node, "negativeForm", {get:__negativeFormMethod, configurable:true});
+  // TODO**: should have seperate "soft" versions of sentence and title case which DON'T call toLowerCase on the whole string first? (i.e. to leave current capitalisations there)
+  Object.defineProperty(node, "sentenceCase", {get:__sentenceCaseMethod, configurable:true});
+  Object.defineProperty(node, "titleCase", {get:__titleCaseMethod, configurable:true});
+  Object.defineProperty(node, "lowerCase", {get:__lowerCaseMethod, configurable:true});
+  Object.defineProperty(node, "upperCase", {get:__upperCaseMethod, configurable:true});
+  Object.defineProperty(node, "replaceText", {value:__replaceTextMethod, configurable:true});
+  // REMEMBER: add text transform names here if you add new ones:
+  if(textTransformNames.length === 0) {
+    textTransformNames.push("pluralForm");
+    textTransformNames.push("singularForm");
+    textTransformNames.push("pastTense");
+    textTransformNames.push("presentTense");
+    textTransformNames.push("futureTense");
+    textTransformNames.push("negativeForm");
+    textTransformNames.push("sentenceCase");
+    textTransformNames.push("titleCase");
+    textTransformNames.push("lowerCase");
+    textTransformNames.push("upperCase");
+    textTransformNames.push("replaceText");
+  }
+
+
+  //Object.defineProperty(node, "createClone", {get:createCloneMethod, configurable:true});
+  Object.defineProperty(node, "consumableList", {get:__consumableListMethod, configurable:true});
+
+  Object.defineProperty(node, "createClone", {get:function() { return __duplicatePerchanceNode(this); }, configurable:true});
+
+  // Object.defineProperty(node, "ordinal", {get:ordinalMethod});
+
+  // Object.defineProperty(node, "$withArticle", {get:withArticleMethod});
+
+  // TODO: add the rest of the default methods for version 1 (including getters like ".itemCount" (which gets the length of the $children array))
+  // TODO: .hideOutput transform?
+  // TODO: .replaceText("blah","na") transform (alias for .replace() except it always replaces ALL occurances unless you use regex and not the global flag)
+  // TODO: add any newly added execution properties to the proxy executionProperties array (e.g. replaceText)
+  // TODO***: remember that you'll need to move the `apply`s along with the text transforms that have an `apply` (e.g. replaceText)
+}
+
+let __replaceTextMethod = function(needle, replacement) {
+  if(needle instanceof RegExp) {
+    return this.toString().replace(needle, replacement.toString());
+  } else {
+    //needle = new RegExp(needle.toString(), "g");
+    //return this.toString().replace(needle, replacement.toString());
+    return this.toString().split(needle.toString()).join(replacement.toString());
+  }
+}
+
+// let createCloneMethod = function() {
+//   // TODO*****: This would try to clone $moduleSpace, $parent, $root, etc.???????????????????!!!!!!!!!!!!!!!!
+//   //              --> test by putting in debugger and testing `this.$parent === clone.parent`
+//   //              --> need to temporarily remove properties which reference other node objects directly? then add them back after
+//   //            At least it DOESN'T make copies of functions
+//   //            I think I need to make my own cloner... either that or really make sure this is working like I expect
+//   let clone = cloner.deep.copy(this);
+//   if(!this.___isLocalCall) {
+//     return clone;
+//   } else {
+//
+//     let proxiedThisRef;
+//     proxiedThisRef = new Proxy(clone, {
+//       // NOTE: if you edit this, edit the same one in evaluateSquareBlock
+//       get: function(target, property, receiver) {
+//         if(property === "$output") {
+//           return undefined;
+//         } else if(property === "___isLocalCall") {
+//           return true;
+//         } else {
+//
+//           let desc = Object.getOwnPropertyDescriptor(target, property);
+//           if(!desc) {
+//             perchanceError(`The '${property}' property doesn't exist within '${target.getName}'.`, ctxInfo.declarationLineNumber);
+//             return;
+//           }
+//           if(desc.get) {
+//             return desc.get.bind(proxiedThisRef)();
+//           } else if(desc.value && typeof desc.value === 'function') {
+//             return desc.value.bind(proxiedThisRef);
+//           } else {
+//             return target[property];
+//           }
+//
+//         }
+//       }
+//     });
+//
+//     return proxiedThisRef;
+//
+//   }
+// };
+
+let __consumableListMethod = function() {
+
+
+  // it's called consumable*List* because it only makes sense to call it on a list-oriented node
+
+  // let list = this.createClone;
+  // Object.defineProperty(list, "isConsumable", {value:true, configurable:true, writable:true}); // not $-prefixed because it should be publicly changable
+  // return list;
+
+  // If this node is wrapped in the $output-hider (See REF:kjhfw927f63ohwkgw82g in evaluateSquareBlock.js), then we unwrap it and do the unhiding ourself in the proxy we create below.
+  // This is needed due to this problem: https://www.reddit.com/r/perchance/comments/fx7exs/how_to_have_multiple_lists_point_to_the_same/fmxzccb/ Basically, if we have something like `$output = [this.consumableList.selectMany(3)]`, then, target[property] will be returned (in the below proxy's getter) *bound to the $output-hider proxy* rather than this one, and so there is no consumableList from the perspective of selectMany. So we make this proxy handle the $output hiding stuff. Remember than binding is different to proxying! This is some chef's kiss spaghetti 
+  let thisRef = this;
+  let $outputShouldBeHidden = false;
+  if(thisRef.___$outputShouldBeHidden) {
+    thisRef = thisRef.___proxyTarget;
+    $outputShouldBeHidden = true;
+  }
+
+  let proxy = new Proxy(thisRef, {
+    alreadyConsumedItems:new Set(),
+    get: function(target, property) {
+      if(property === "selectOne") {
+        // NOTE: inline consumable lists are handled in the toStringMethod
+        let selectedNode = __selectOneMethod.bind(proxy)();
+        if(selectedNode && selectedNode.$nodeType) { // make sure it's a node (could be an error string)
+          this.alreadyConsumedItems.add(selectedNode);
+        }
+        return selectedNode;
+      } else if(property === "getLength") {
+        if(Object.keys(target).includes("getLength")) return target["getLength"];
+        else return Object.keys(target).length - this.alreadyConsumedItems.size;
+      } else if(property === "$alreadyConsumedItems") {
+        return this.alreadyConsumedItems;
+      } else if(textTransformNames.includes(property)) {
+        return proxy.selectOne[property]; // added due to this problem: https://www.reddit.com/r/perchance/comments/7uw0sp/errors_with_consumablelist_and_uppercase_together/
+      } else if(property === "getSelf") {
+        return proxy;
+      } else if($outputShouldBeHidden && property === "$output") {
+        return undefined;
+      } else {
+        // TODO: strangely, the return value here seems to be automatically bound to this proxy.
+        // so it also handles toString and valueOf methods like we want it to.
+        // I think it's because in `foo().bar()`, bar is by default bound to the thing returned by foo?
+        return target[property];
+      }
+    },
+  });
+
+  return proxy;
+
+};
+
+
+let __valueOfMethod = function(key) {
+  let str = this.toString();
+  if(String(Number(str)) === str) {
+    return Number(str);
+  } else {
+    return str;
+  }
+};
+
+
+// let idMethod = function(key) {
+//
+//   if(typeof key !== 'string') {
+//     key = key.toString();
+//   }
+//
+//   // TODO***: (BIG ONE): clone `this` and set its toString method so it
+//   // always returns the $child string that was selected below BUT ALSO can
+//   // still have its sub-properties accessed. (i.e. the only difference between
+//   // the clone and the original is that the clone always returns a static string
+//   // when toString is called (instead of selecting a random child - or returning the
+//   // evaluated $value text in the case of a $value node))
+//   // BUT HERE'S THING THING: if a child node is selected and it's "the {cat|dog}", do
+//   // future requests to that id return "the {cat|dog}" or the EVALUATED version of
+//   // that text? So we can store either:
+//   //  - the node itself
+//   //  - the text of the node
+//   //  - the *evaluated* text of the node
+//   // and return it next time that id is called again. Which one? The ideal one seems
+//   // to depend on the context:
+//   /*
+//
+//   // here, the node one doesn't make sense, but the other two work fine
+//   animal
+//     dog
+//     cat
+//     pig
+//
+//   // here, the node one doesn't make sense, and the other two behave differently.
+//   // it seems like storing the *evaluated* text would make the most sense in this case.
+//   sentence
+//     I'm {going|running} to the {shops|hotel}.
+//     That's a {great|silly|quaint} handbag you've got there.
+//   // and actually, I can't think of an example where storing the un-evaluated text would
+//   // make sense.
+//
+//   NEW TACK: curly notation for the id thing because it will be so common:
+//   {animal#1} -> [animal.$id(1)]
+//   but wait - I still need to decide on id behavior...
+//   -----
+//   The cloning behaviour makes the most sense? Need to bite the bullet and spend a day perfecting this.
+//   It's an integral part of the last big trio (id/unique/remember)
+//
+//
+//   */
+//
+//   if(this.$idStore[key]) {
+//     return this.$idStore[key];
+//   } else {
+//     let child = this.$child;
+//
+//     // if its text is dynamic, we need to evaluate it (they expect the same text each time!).
+//     // if it's not, there's no need to evaluate it.
+//     // note that if it IS dynamic, then there won't be any child properties, so we can just store
+//     // and return a plain old string!
+//     let blocks = splitTextAtAllBlocks(child.$text);
+//     if(blocks.length > 1 || blocks[0][0] === "[" || blocks[0][0] === "{") {
+//       child = child.toString();
+//     }
+//
+//     this.$idStore[key] = child;
+//     return this.$idStore[key];
+//   }
+//
+// };
+// let setIdMethod = function(key) {
+//   if(this.$idStore[key]) {
+//     delete this.$idStore[key];
+//   }
+//   return this.$id(key);
+// };
+
+
+let __selectAllMethod = function() {
+
+  // This methos gets ALL items, regarless of whether they have odds == 0
+  // If one wants to exlude `odds==0` items: list.selectAll.filter(item => item.getOdds > 0)
+  
+  let $output = this.$output;
+  if($output !== undefined) {
+    return [$output]; // make it an array because why not. (consistency is nice)
+  }
+
+  if(this.$nodeType === "value") {
+    let text = this.$value;
+    if(text[0] === "{" && text[text.length-1] === "}") {
+      let items = __splitUpCurlyOrBlock(text.substr(1, text.length-2));
+      if(items) { // i.e. if it's a valid curly OR block
+        return items;
+      } else {
+        __perchanceError(`You've called 'selectAll' on something that doesn't appear to be a list?`, this.$declarationLineNumber);
+        return;
+      }
+    } else {
+      __perchanceError(`You've called 'selectAll' on something that doesn't appear to be a list?`, this.$declarationLineNumber);
+      return;
+    }
+  }
+
+  let arr = [];
+  for(let key of this.$children) {
+    arr.push(this[key]);
+  }
+  arr.toString = function() { return this.join(""); }; // This makes sense, right? Who would selectAll, but then expect a single random item? That would be silly.
+  return arr;
+};
+
+
+
+
+let __selectOneMethod = function() {
+
+  const isConsumableList = !!this.$alreadyConsumedItems;
+
+  let consumedNodes = new Set();
+  if(isConsumableList) {
+    consumedNodes = this.$alreadyConsumedItems; // this is a property of the consumableList proxy handler that we expose
+  }
+
+  let $output = this.$output; // cache it so we don't "execute" it twice if it's something like `$output = [this.age++]`
+  if($output !== undefined) {
+    return $output;
+  }
+
+  if(this.$nodeType === "value") {
+    // I'm pretty sure we want to `toString` (evaulate) it because why would you call selectOne on a value node otherwise?
+    // Consider these two examples:
+    // height = {1-10}
+    // height
+    //   {1-10}
+    // You might think we should treat the former the same way as the latter (i.e. NOT evaluate it), but that doesn't make sense in terms of the user's intention.
+    // I'm pretty sure I've made the right decision here but hopefully the beta testers will surface any mistakes in my reasoning.
+    let result = this.toString();
+    if(String(Number(result)) === result) return Number(result);
+    else return result;
+  }
+
+  let textNodes = [];
+  let oddsSum = 0;
+  let oddsArray = [];
+
+  for(let key of this.$children) {
+    let node = this[key];
+    if(!consumedNodes.has(node)) {
+      let odds = node.$odds; // remember, $odds is a getter and could be dynamic, so we musn't call it multiple times and expect the same result
+
+      // if it has odds of zero, leave it out - but don't consume it, because it hasn't been consumed (zero odds could be temporary, for example)
+      // EDIT: turns this doesn't really make sense for non-consumable lists (because you end up with problems like this: https://www.reddit.com/r/perchance/comments/co6msx/bug_list_name_being_included_in_output_of_list/)
+      //       and it's not really that useful for cosumableLists either except to help people find bugs where their list ran out of non-zero-odds items. So I think
+      //       due to the problems it causes with peoples' code it's not worth the trouble. So I'm commenting it out for now.
+      //if(odds === 0 && isConsumableList) continue;
+
+      if(odds < 0 || isNaN(odds)) {
+        __perchanceError(`The item on line number ${node.$declarationLineNumber} has the following odds: <code>${node.$oddsText}</code>. This has resulted in an odds value of <code>${odds}</code>, which not valid. It should be a positive number.`);
+      }
+
+      textNodes.push(node);
+      oddsSum += odds;
+      oddsArray.push(odds);
+    }
+  }
+
+  if(textNodes.length === 0) {
+    if(consumedNodes.size > 0) return `(no more items in the consumable '${this.$text}' list)`;
+    else return __evaluateText(this.$root, this.$parent, this.$text, {declarationLineNumber:this.$declarationLineNumber}); // we need to return the text if no children, otherwise we can't do nice stuff like this: https://www.reddit.com/r/perchance/comments/6g1uqk/fixed_variables/dio2da4/
+    // and we need to *evaluate* the text because otherwise we couldn't do `c = b.selectOne.selectOne` in this example: https://www.reddit.com/r/perchance/comments/6qqc4d/items_in_shorthand_lists_arent_always_stored/dl01lkv/
+
+    //else return `('${this.$text}' is not a list)`;
+    // don't throw error because it's okay for a node not to have children
+    //console.error(`Error trying to get child nodes of '${this.$text}' which was declared on line number ${this.$declarationLineNumber}.`);
+    // if(this.isConsumable) return `(no more items in the consumable '${this.$text}' list)`;
+    // else return `('${this.$text}' is not a list)`; // TODO***: return `this.$text` here since it's not consumable and has no children?
+  }
+
+  // choose random position in oddsSum range
+  let oddsSumStopPoint = oddsSum*Math.random();
+  let selectedTextNode = null;
+  let oddsSumForChoice = 0;
+
+  for(let i = 0; i < textNodes.length; i++) {
+    oddsSumForChoice += oddsArray[i];
+    if(oddsSumForChoice >= oddsSumStopPoint) {
+      selectedTextNode = textNodes[i];
+      break;
+    }
+  }
+
+  if(selectedTextNode === null) {
+    __perchanceError(`This shouldn't happen! This may be a problem with the Perchance engine. Please report this bug to <a href='http://reddit.com/r/perchance'>reddit.com/r/perchance</a>. A text node couldn't be picked during a random selection in a node's .toString() function. Here's some extra details for the bug report: this.$text=${this.$text}; this.$children=${this.$children.join(",")}; this.$declarationLineNumber=${this.$declarationLineNumber}`);
+    console.log(this, textNodes);
+    console.error("Returning first text node rather than random one to prevent crashing while debugging.");
+    return textNodes[0];
+  }
+
+  // if(this.isConsumable) {
+  //   let text = selectedTextNode.$text;
+  //   this.$children = this.$children.filter(c => c !== text);
+  //   delete this[text];
+  // }
+
+  return selectedTextNode;
+
+}
+
+
+let __toStringMethod = function(opts={}) {
+
+  // NOTE: We can't call processEscapedCharacters on the text before returning it because this method gets called
+  //       DURING the evaluateSquareBlock calls that are inside evaluateText, and so processEscapedCharacters would get
+  //       called multiple times on the same text. We actually (sort of counterintuitively) want to keep all the backslashes
+  //       in the input until just before the whole string is returned.
+  //       I was previously doing this by calling processEscapedCharacters in the updateTemplatedNodes function, but the
+  //       problem with that is that if you have something like onclick="outputEl.innerHTML = animal.description" it won't
+  //       remove the backslashes from the animal.description text. I was previously solving that by using the MutationObserver
+  //       stuff, but that still doesn't cut it, because when you grab the text from a Perchance node and manipulate it with JS,
+  //       you obviously don't expect it to have the escape characters in it.
+  //   --> WAIT. I haven't slept in way too long, but I have a crazy theory that we actually don't want to strip the backslashes
+  //       when the text is "viewed" from JavaScript. JavaScript is the "engine" so it makes sense that we'd see the text in its
+  //       most "raw" state - no processing at all. Oh, so I just need to make evaluateItem strip the backslashes??
+  //   --> WAIT AGAIN: I don't think that makes sense. When we convert a node/item to a string, we expect it to just be a plain
+  //       string. It's "out of perchance" at that point. It's just meant to be a plain old string. So I think the obvious thing
+  //       to do here (regarding the above note about this being used in the evaluateText function - and wanting to preserve
+  //       backslashes until right before the final string is returned from this function) is just to use a version of this method
+  //       which specifically doesn't remove backslashes, right? Should this function just take an options object? Yep, I'm going
+  //       with that.
+
+  // TODO***: use getOwnPropertyDescriptor to detect $output? since it could be defined and yet return undefined
+  //          make sure you update other methods too
+  let $output = this.$output;
+  if($output !== undefined) {
+    $output = typeof $output === "number" ? $output.toString() : $output.toString({keepEscapes:opts.keepEscapes}); // only pass the keepEscapes object if it's not a number (because numbers expect a radix as the param of toString)
+    let result = __evaluateText(this.$root, this.$parent, $output, {declarationLineNumber:this.$declarationLineNumber});
+    if(opts.keepEscapes) return result;
+    else return __processEscapedCharacters(result);
+  }
+
+  if(this.$nodeType === "value") {
+    if(typeof this.$value === "number")  { return this.$value; }
+    else {
+      // if it's a consumableList and is plain inline notation like {1|2|3|4|...} with nothing before or after, then let's consume it
+      let text = this.$value;
+      if(this.$alreadyConsumedItems && text[0] === "{" && text[text.length-1] === "}") {
+        let items = __splitUpCurlyOrBlock(text.substr(1, text.length-2));
+        if(items) { // i.e. if it's a valid curly OR block
+          // remove already consumed items
+          items = items.filter(i => !this.$alreadyConsumedItems.has( __getTextOddsDetails(i).textWithoutOdds || i )); // "|| i" needed because getTextOddsDetails returns false if no odds details
+          if(items.length === 0) return `(inline consumable list '${this.$key}' has no more items)`;
+          // choose an item
+          let chosenItem = __chooseRandomTextByOdds(this.$root, this.$parent, items);
+          // add the chosen item to $alreadyConsumedItems
+          this.$alreadyConsumedItems.add(chosenItem);
+          // return the chosen item
+          if(opts.keepEscapes) return chosenItem;
+          else return __processEscapedCharacters(chosenItem);
+        }
+      }
+      if(this.$alreadyConsumedItems) __perchanceError(`You tried to make this into a consumable list: <code>${__escapeHTMLSpecialChars(this.$key)} = ${__escapeHTMLSpecialChars(this.$value)}</code>, but for an inline item to be consumable, it must be of the format <code>a = {b|c|d}</code> and cannot have anything outside of the curly brackets (e.g. you could not make <code>a = {b|c|d}efg</code> consumable).`, this.$declarationLineNumber);
+      let result = __evaluateText(this.$root, this.$parent, this.$value, {declarationLineNumber:this.$declarationLineNumber});
+      if(opts.keepEscapes) return result;
+      else return __processEscapedCharacters(result);
+    }
+  }
+
+  // toString treats childless nodes differently to ones that have children (i.e. items that are themselves lists)
+  // this sounds like a terrible idea at first, but I've put a bit of thought into it and it seems like the best option
+  // so that newbies don't have to understand how the engine works just to simply do: [f = flower.selectOne]. The
+  // alternative would be to make them do [f = flower.selectOne.itemName] which is ridiculous.
+  // If you think about it, this approach actually makes a bit of sense. If `this` node is itself a list, then that's
+  // an important fundamental difference, and so a difference in behaviour isn't really too unexpected.
+  // What we're basically saying is that leaves are treated differently to branches. The awesome part about this
+  // approach is that it alls us to do `[a = animal.selectOne] ... [a.genus]` - i.e. we can access the *properties*
+  // of the selected animal. [a=animal.outputText] doesn't allow us to do this.
+  if(this.$children.length === 0) {
+    let result = __evaluateText(this.$root, this.$parent, this.$text, {declarationLineNumber:this.$declarationLineNumber});
+    if(opts.keepEscapes) return result;
+    else return __processEscapedCharacters(result);
+  }
+
+  if(this.$children.length > 0) {
+
+    let child = this.selectOne;
+    if(typeof child === 'string') { // e.g., if it is an error message
+      return child;
+    }
+    let text = child.$text;
+    let declarationLineNumber = child.$declarationLineNumber;
+
+    let result = __evaluateText(this.$root, child.$parent, text, {declarationLineNumber});
+    if(opts.keepEscapes) return result;
+    else return __processEscapedCharacters(result);
+
+  }
+
+};
+
+
+// let addItemMethod = function(key) {
+//   this.$children.push(key);
+//   this[key] = undefined;
+//   console.log("THIS NEEDS FIXING! (see TODO, below this line)")
+//   // TODO: fix this? what if they want to add a child of the added child? needs to be a *proper* node?
+//   // TODO: implement $addChildren and $removeChildren methods ($addChild and $removeChild should really just be aliases of these)
+// };
+// let removeItemMethod = function(key) {
+//   this.$children.filter(k => k !== key);
+//   delete this[key];
+//   // TODO: verify that this works and makes sense
+// };
+
+let __$oddsMethod = function() {
+
+  if(this.$oddsText == '1') return 1;
+  if( String(Number(this.$oddsText)) === this.$oddsText ) return Number(this.$oddsText);
+
+  // NOTE: must use $oddsText odds rather than this.$odds, because this is the definition of $odds! (it'd be recursive)
+  if(typeof this.$oddsText !== 'string') {
+    __perchanceError(`This shouldn't happen. This may be a problem with the Perchance engine. Please report this bug to <a href='http://reddit.com/r/perchance'>reddit.com/r/perchance</a>. The odds property of this node isn't a string. Here's some extra details for the bug report: this.$text=${__escapeHTMLSpecialChars(this.$text)}; this.$children=${__escapeHTMLSpecialChars(this.$children.join(","))}; this.$declarationLineNumber=${__escapeHTMLSpecialChars(this.$declarationLineNumber)}; this.$oddsText=${__escapeHTMLSpecialChars(this.$oddsText)}`);
+    return 1;
+  }
+
+  let evaluatedOdds = __oddsTextToNumber(this.$root, this.$parent, this.$oddsText, {declarationLineNumber:this.$declarationLineNumber});
+  if(typeof evaluatedOdds === 'number') {
+    return evaluatedOdds;
+  } else {
+    // TODO: potentially convert strings to numbers using eval (if it is a number, obviously). The reason
+    // I'm not doing it yet is because I may do string->number conversions automatically across the whole system.
+    // i.e. in the evaluateSquareBlock function itself.
+    __perchanceError(`The '^' character is used to specify how likely an item is of being chosen during a random selection. This line appears to have a '^' character, but the text after that character (<b>${__escapeHTMLSpecialChars(this.$oddsText)}</b>) isn't a number, or didn't evaluate to a number. You're allowed to use square and curly bracket expressions to randomly/dynamically determine the odds, but these expressions must evaluate to a number. In this case your odds expression didn't result in a number.`, this.$declarationLineNumber);
+
+    return 1;
+  }
+
+};
+
+// let shuffleMethod = function(numShuffles) {
+//
+//   // TODO***: can't order object keys, so this method is useless on nodes (but useful for arrays and strings)
+//
+//   if(numShuffles === undefined) {
+//
+//     var array = this.$children;
+//     var currentIndex = array.length, temporaryValue, randomIndex;
+//     // While there remain elements to shuffle...
+//     while (0 !== currentIndex) {
+//       // Pick a remaining element...
+//       randomIndex = Math.floor(Math.random() * currentIndex);
+//       currentIndex -= 1;
+//       // And swap it with the current element.
+//       temporaryValue = array[currentIndex];
+//       array[currentIndex] = array[randomIndex];
+//       array[randomIndex] = temporaryValue;
+//     }
+//     array = array.map(c => this[c]); // map to actual node objects
+//     array.toString = function() { this.join(""); }
+//     return array;
+//
+//   } else {
+//
+//     let text = this.toString().split("");
+//     for(let i = 0; i < numShuffles; i++) {
+//       let i1 = Math.floor(text.length*Math.random());
+//       let i2 = Math.floor(text.length*Math.random());
+//       let c1 = text[i1];
+//       let c2 = text[i2];
+//       text[i1] = c2;
+//       text[i2] = c1;
+//     }
+//     return text.join("");
+//
+//   }
+//
+// }
+
+
+let __joinItemsMethod = function(str) {
+
+  let $output = this.$output;
+  if($output !== undefined) {
+    return $output.toString();
+  }
+
+  let arr = [];
+  for(let c of this.$children) {
+    arr.push(this[c].getName);
+  }
+  return arr.joinItems(str+"");
+};
+
+
+let __selectUniqueMethod = function(...a) {
+  return this.consumableList.selectMany(...a);
+};
+
+let __selectManyMethod = function(...a) {
+
+  let num;
+  if(a.length === 1) {
+    if(Array.isArray(a[0])) {
+      num = Number(a[0][Math.floor(Math.random()*a[0].length)]);
+    } else {
+      num = Number(a[0]);
+    }
+  } else if(a.length === 2) {
+    num = Number(a[0]) + Math.round(Math.random()*(a[1]-a[0]));
+  } else if(a.length > 2) {
+    num = Number(a[Math.floor(Math.random()*a.length)]);
+  }
+  if(isNaN(num) || typeof num !== 'number') {
+    if(a.length === 0) {
+      __perchanceError(`You didn't give the selectMany() function any inputs when you used it on the node with the text "${__escapeHTMLSpecialChars(this.$text || this)}". You need to give it at least one input so it knows how long the list/array should be.`);
+    } else {
+      __perchanceError(`There's a problem with the inputs that you provided to the "selectMany" function when you used it on the node with the text "${__escapeHTMLSpecialChars(this.$text || this)}". You have given it the following input${a.length == 1 ? "" : "s"}: <b>${__escapeHTMLSpecialChars(a.join("</b>, <b>"))}</b>. ${a.length == 1 ? "This" : "These"} input${a.length == 1 ? "" : "s"} should be numeric (i.e. ${a.length == 1 ? "it" : "they"} should be${a.length == 1 ? " a " : " "} number${a.length == 1 ? "" : "s"}).`);
+    }
+    return ["(syntax error)"];
+  }
+  let arr = [];
+  for(let i = 0; i < num; i++) {
+    arr.push(this.selectOne);
+  }
+  // overwrite default array behaviour (selects a random one)
+  // in the case where they don't specify a join() after the repeat:
+  arr.toString = function() { return this.join(""); };
+  return arr;
+};
+
+
+
+let __titleCaseMethod = function() {
+  return this.toString().split(' ').map((s) => (s.slice(0, 1).toUpperCase() + s.slice(1).toLowerCase())).join(' ');
+};
+let __sentenceCaseMethod = function() {
+  return this.toString().split(/([!?.]+)/g).map((s) => {
+    let i = s.search(/[a-zA-Z]/);
+    let a = s.slice(0, i);
+    let b = s.slice(i, i+1).toUpperCase();
+    let c = s.slice(i+1);
+    return a + b + c;
+  }).join("");
+};
+let __upperCaseMethod = function() {
+  //debugger;
+  return this.toString().toUpperCase();
+};
+let __lowerCaseMethod = function() {
+  return this.toString().toLowerCase();
+};
+
+!function(e,a){"function"==typeof require&&"object"==typeof exports&&"object"==typeof module?module.exports=a():"function"==typeof define&&define.amd?define(function(){return a()}):e.pluralize=a()}(this,function(){var e=[],a=[],i={},r={},s={};function o(e){return"string"==typeof e?new RegExp("^"+e+"$","i"):e}function t(e,a){return e===a?a:e===e.toLowerCase()?a.toLowerCase():e===e.toUpperCase()?a.toUpperCase():e[0]===e[0].toUpperCase()?a.charAt(0).toUpperCase()+a.substr(1).toLowerCase():a.toLowerCase()}function n(e,a){return e.replace(a[0],function(i,r){var s,o,n=(s=a[1],o=arguments,s.replace(/\$(\d{1,2})/g,function(e,a){return o[a]||""}));return t(""===i?e[r-1]:i,n)})}function u(e,a,r){if(!e.length||i.hasOwnProperty(e))return a;for(var s=r.length;s--;){var o=r[s];if(o[0].test(a))return n(a,o)}return a}function l(e,a,i){return function(r){var s=r.toLowerCase();return a.hasOwnProperty(s)?t(r,s):e.hasOwnProperty(s)?t(r,e[s]):u(s,r,i)}}function c(e,a,i,r){return function(r){var s=r.toLowerCase();return!!a.hasOwnProperty(s)||!e.hasOwnProperty(s)&&u(s,s,i)===s}}function h(e,a,i){return(i?a+" ":"")+(1===a?h.singular(e):h.plural(e))}return h.plural=l(s,r,e),h.isPlural=c(s,r,e),h.singular=l(r,s,a),h.isSingular=c(r,s,a),h.addPluralRule=function(a,i){e.push([o(a),i])},h.addSingularRule=function(e,i){a.push([o(e),i])},h.addUncountableRule=function(e){"string"!=typeof e?(h.addPluralRule(e,"$0"),h.addSingularRule(e,"$0")):i[e.toLowerCase()]=!0},h.addIrregularRule=function(e,a){a=a.toLowerCase(),e=e.toLowerCase(),s[e]=a,r[a]=e},[["I","we"],["me","us"],["he","they"],["she","they"],["them","them"],["myself","ourselves"],["yourself","yourselves"],["itself","themselves"],["herself","themselves"],["himself","themselves"],["themself","themselves"],["is","are"],["was","were"],["has","have"],["this","these"],["that","those"],["echo","echoes"],["dingo","dingoes"],["volcano","volcanoes"],["tornado","tornadoes"],["torpedo","torpedoes"],["genus","genera"],["viscus","viscera"],["stigma","stigmata"],["stoma","stomata"],["dogma","dogmata"],["lemma","lemmata"],["schema","schemata"],["anathema","anathemata"],["ox","oxen"],["axe","axes"],["die","dice"],["yes","yeses"],["foot","feet"],["eave","eaves"],["goose","geese"],["tooth","teeth"],["quiz","quizzes"],["human","humans"],["proof","proofs"],["carve","carves"],["valve","valves"],["looey","looies"],["thief","thieves"],["groove","grooves"],["pickaxe","pickaxes"],["passerby","passersby"]].forEach(function(e){return h.addIrregularRule(e[0],e[1])}),[[/s?$/i,"s"],[/[^\u0000-\u007F]$/i,"$0"],[/([^aeiou]ese)$/i,"$1"],[/(ax|test)is$/i,"$1es"],[/(alias|[^aou]us|t[lm]as|gas|ris)$/i,"$1es"],[/(e[mn]u)s?$/i,"$1s"],[/([^l]ias|[aeiou]las|[ejzr]as|[iu]am)$/i,"$1"],[/(alumn|syllab|vir|radi|nucle|fung|cact|stimul|termin|bacill|foc|uter|loc|strat)(?:us|i)$/i,"$1i"],[/(alumn|alg|vertebr)(?:a|ae)$/i,"$1ae"],[/(seraph|cherub)(?:im)?$/i,"$1im"],[/(her|at|gr)o$/i,"$1oes"],[/(agend|addend|millenni|dat|extrem|bacteri|desiderat|strat|candelabr|errat|ov|symposi|curricul|automat|quor)(?:a|um)$/i,"$1a"],[/(apheli|hyperbat|periheli|asyndet|noumen|phenomen|criteri|organ|prolegomen|hedr|automat)(?:a|on)$/i,"$1a"],[/sis$/i,"ses"],[/(?:(kni|wi|li)fe|(ar|l|ea|eo|oa|hoo)f)$/i,"$1$2ves"],[/([^aeiouy]|qu)y$/i,"$1ies"],[/([^ch][ieo][ln])ey$/i,"$1ies"],[/(x|ch|ss|sh|zz)$/i,"$1es"],[/(matr|cod|mur|sil|vert|ind|append)(?:ix|ex)$/i,"$1ices"],[/\b((?:tit)?m|l)(?:ice|ouse)$/i,"$1ice"],[/(pe)(?:rson|ople)$/i,"$1ople"],[/(child)(?:ren)?$/i,"$1ren"],[/eaux$/i,"$0"],[/m[ae]n$/i,"men"],["thou","you"]].forEach(function(e){return h.addPluralRule(e[0],e[1])}),[[/s$/i,""],[/(ss)$/i,"$1"],[/(wi|kni|(?:after|half|high|low|mid|non|night|[^\w]|^)li)ves$/i,"$1fe"],[/(ar|(?:wo|[ae])l|[eo][ao])ves$/i,"$1f"],[/ies$/i,"y"],[/(dg|ss|ois|lk|ok|wn|mb|th|ch|ec|oal|is|ck|ix|sser|ts|wb)ies$/i,"$1ie"],[/\b(l|(?:neck|cross|hog|aun)?t|coll|faer|food|gen|goon|group|hipp|junk|vegg|(?:pork)?p|charl|calor|cut)ies$/i,"$1ie"],[/\b(mon|smil)ies$/i,"$1ey"],[/\b((?:tit)?m|l)ice$/i,"$1ouse"],[/(seraph|cherub)im$/i,"$1"],[/(x|ch|ss|sh|zz|tto|go|cho|alias|[^aou]us|t[lm]as|gas|(?:her|at|gr)o|[aeiou]ris)(?:es)?$/i,"$1"],[/(analy|diagno|parenthe|progno|synop|the|empha|cri|ne)(?:sis|ses)$/i,"$1sis"],[/(movie|twelve|abuse|e[mn]u)s$/i,"$1"],[/(test)(?:is|es)$/i,"$1is"],[/(alumn|syllab|vir|radi|nucle|fung|cact|stimul|termin|bacill|foc|uter|loc|strat)(?:us|i)$/i,"$1us"],[/(agend|addend|millenni|dat|extrem|bacteri|desiderat|strat|candelabr|errat|ov|symposi|curricul|quor)a$/i,"$1um"],[/(apheli|hyperbat|periheli|asyndet|noumen|phenomen|criteri|organ|prolegomen|hedr|automat)a$/i,"$1on"],[/(alumn|alg|vertebr)ae$/i,"$1a"],[/(cod|mur|sil|vert|ind)ices$/i,"$1ex"],[/(matr|append)ices$/i,"$1ix"],[/(pe)(rson|ople)$/i,"$1rson"],[/(child)ren$/i,"$1"],[/(eau)x?$/i,"$1"],[/men$/i,"man"]].forEach(function(e){return h.addSingularRule(e[0],e[1])}),["adulthood","advice","agenda","aid","aircraft","alcohol","ammo","analytics","anime","athletics","audio","bison","blood","bream","buffalo","butter","carp","cash","chassis","chess","clothing","cod","commerce","cooperation","corps","debris","diabetes","digestion","elk","energy","equipment","excretion","expertise","firmware","flounder","fun","furniture","gallows","garbage","graffiti","hardware","headquarters","health","herpes","highjinks","homework","housework","information","jeans","justice","kudos","labour","literature","machinery","mackerel","mail","media","mews","moose","music","mud","manga","news","only","personnel","pike","plankton","pliers","police","pollution","premises","rain","research","rice","salmon","scissors","series","sewage","shambles","shrimp","software","staff","swine","tennis","traffic","transportation","trout","tuna","wealth","welfare","whiting","wildebeest","wildlife","you",/pok[eé]mon$/i,/[^aeiou]ese$/i,/deer$/i,/fish$/i,/measles$/i,/o[iu]s$/i,/pox$/i,/sheep$/i].forEach(h.addUncountableRule),h});
+window.__pluralize396795627295786 = window.pluralize; // winning
+delete window.pluralize;
+
+let __pluralFormMethod = function() {
+  let input = this.toString();
+  return __pluralize396795627295786(input);
+  
+  //let output = nlp(input).nouns().toPlural().out("text");
+  //return output === "" ? input : output; // don't add "s" by default because the lib should already do it, and sometimes plural is same as singular (e.g. furniture)
+};
+let __singularFormMethod = function() {
+  let input = this.toString();
+  return __pluralize396795627295786(input, 1);
+  
+  // let output = nlp(input).nouns().toSingular().out("text");
+  // return output === "" ? input : output;
+};
+
+
+let nlpCompromiseAddedWords = {abolish:"Verb",abound:"Verb",abstract:"Verb",accent:"Verb",accomplish:"Verb",admonish:"Verb",alert:"Verb",ally:"Verb",appropriate:"Verb",astonish:"Verb",auction:"Verb",audition:"Verb",average:"Verb",awake:"Verb",award:"Verb",back:"Verb",backpedal:"Verb",banish:"Verb",bank:"Verb",bankrupt:"Verb",better:"Verb",bill:"Verb",blacklist:"Verb",bless:"Verb",blind:"Verb",bloody:"Verb",blossom:"Verb",board:"Verb",bob:"Verb",bombard:"Verb",bottle:"Verb",brave:"Verb",breakfast:"Verb",brief:"Verb",bus:"Verb",busy:"Verb",butcher:"Verb",butter:"Verb",cake:"Verb",calm:"Verb",captain:"Verb",care:"Verb",cash:"Verb",caution:"Verb",center:"Verb",cherish:"Verb",christen:"Verb",chronicle:"Verb",chuck:"Verb",circumvent:"Verb",clean:"Verb",clear:"Verb",club:"Verb",commission:"Verb",complete:"Verb",comply:"Verb",conceal:"Verb",condition:"Verb",content:"Verb",contrive:"Verb",cool:"Verb",correct:"Verb",corrupt:"Verb",critique:"Verb",cup:"Verb",dawn:"Verb",degenerate:"Verb",demolish:"Verb",deprive:"Verb",derive:"Verb",design:"Verb",diminish:"Verb",disable:"Verb",discard:"Verb",disregard:"Verb",don:"Verb",double:"Verb",down:"Verb",dry:"Verb",dull:"Verb",elaborate:"Verb",embellish:"Verb",empty:"Verb",engineer:"Verb",enlist:"Verb",equal:"Verb",erect:"Verb",exact:"Verb",faint:"Verb",fake:"Verb",fancy:"Verb",fine:"Verb",firm:"Verb",fish:"Verb",fit:"Verb",flatter:"Verb",flicker:"Verb",flourish:"Verb",fly:"Verb",ford:"Verb",forward:"Verb",foster:"Verb",foul:"Verb",free:"Verb",frequent:"Verb",fund:"Verb",furnish:"Verb",further:"Verb",garnish:"Verb",gossip:"Verb",grace:"Verb",grant:"Verb",ground:"Verb",group:"Verb",herald:"Verb",hoist:"Verb",hollow:"Verb",hope:"Verb",house:"Verb",hum:"Verb",humble:"Verb",ice:"Verb",impoverish:"Verb",indent:"Verb",index:"Verb",initial:"Verb",institute:"Verb",inventory:"Verb",knot:"Verb",last:"Verb",lavish:"Verb",lean:"Verb",light:"Verb",lobby:"Verb",long:"Verb",lower:"Verb",lunch:"Verb",mail:"Verb",man:"Verb",mark:"Verb",marshal:"Verb",mature:"Verb",mean:"Verb",mellow:"Verb",milk:"Verb",mimic:"Verb",mine:"Verb",model:"Verb",moderate:"Verb",motion:"Verb",mute:"Verb",narrow:"Verb",near:"Verb",nestle:"Verb",nick:"Verb",number:"Verb",nurse:"Verb",obscure:"Verb",oil:"Verb",open:"Verb",outlive:"Verb",overcrowd:"Verb",overdo:"Verb",overeat:"Verb",overflow:"Verb",overhaul:"Verb",overhear:"Verb",overheat:"Verb",overload:"Verb",overlook:"Verb",overpower:"Verb",overrule:"Verb",oversee:"Verb",overshadow:"Verb",oversleep:"Verb",overthrow:"Verb",overturn:"Verb",own:"Verb",panic:"Verb",part:"Verb",partition:"Verb",patent:"Verb",patrol:"Verb",pedal:"Verb",pepper:"Verb",perfect:"Verb",perish:"Verb",petition:"Verb",plant:"Verb",please:"Verb",ply:"Verb",police:"Verb",polish:"Verb",position:"Verb",post:"Verb",pound:"Verb",power:"Verb",press:"Verb",pressure:"Verb",prime:"Verb",pucker:"Verb",punish:"Verb",query:"Verb",quiz:"Verb",rain:"Verb",rally:"Verb",ration:"Verb",rear:"Verb",rebel:"Verb",rebound:"Verb",refurbish:"Verb",relish:"Verb",repeal:"Verb",replenish:"Verb",requisition:"Verb",research:"Verb",reserve:"Verb",rev:"Verb",revive:"Verb",right:"Verb",ring:"Verb",rival:"Verb",round:"Verb",salt:"Verb",sanction:"Verb",scent:"Verb",school:"Verb",secure:"Verb",separate:"Verb",service:"Verb",shut:"Verb",signal:"Verb",silhouette:"Verb",single:"Verb",slow:"Verb",smooth:"Verb",snicker:"Verb",snow:"Verb",sour:"Verb",space:"Verb",spare:"Verb",speed:"Verb",spike:"Verb",spiral:"Verb",spy:"Verb",square:"Verb",stable:"Verb",station:"Verb",steady:"Verb",steam:"Verb",stuff:"Verb",sue:"Verb",tame:"Verb",tan:"Verb",taper:"Verb",tarnish:"Verb",tender:"Verb",tense:"Verb",thin:"Verb",thunder:"Verb",till:"Verb",time:"Verb",top:"Verb",total:"Verb",trouble:"Verb",undercut:"Verb",underline:"Verb",undertake:"Verb",undervalue:"Verb",up:"Verb",upset:"Verb",utter:"Verb",vanish:"Verb",varnish:"Verb",void:"Verb",wade:"Verb",warm:"Verb",water:"Verb",weather:"Verb",wed:"Verb",welcome:"Verb",woo:"Verb",wound:"Verb"};
+let __pastTenseMethod = function() {
+  let word = this.toString();
+  if(word === "hope" || word === "hopes" || word === "hoped" || word === "hoping") return "hoped";
+  if(word === "bill" || word === "bills" || word === "billed" || word === "billing") return "billed";
+  if(word === "dawn" || word === "dawns" || word === "dawned" || word === "dawning") return "dawned";
+  //return nlp(this.toString(), nlpCompromiseAddedWords).sentences().toPastTense().out("text")
+  let out = __nlpCompromise("They "+this.toString(), nlpCompromiseAddedWords).verbs().conjugate()[0];
+  return out ? out.PastTense : this.toString()+"ed";
+};
+let __futureTenseMethod = function() {
+  let word = this.toString();
+  if(word === "hope" || word === "hopes" || word === "hoped" || word === "hoping") return "will hope";
+  if(word === "bill" || word === "bills" || word === "billed" || word === "billing") return "will bill";
+  if(word === "dawn" || word === "dawns" || word === "dawned" || word === "dawning") return "will dawn";
+  //return nlp(this.toString(), nlpCompromiseAddedWords).sentences().toFutureTense().out("text")
+  let out = __nlpCompromise("They "+this.toString(), nlpCompromiseAddedWords).verbs().conjugate()[0];
+  return out ? out.FutureTense : this.toString()+"ed";
+};
+let __presentTenseMethod = function() {
+  let word = this.toString();
+  if(word === "hope" || word === "hopes" || word === "hoped" || word === "hoping") return "hopes";
+  if(word === "bill" || word === "bills" || word === "billed" || word === "billing") return "bills";
+  if(word === "dawn" || word === "dawns" || word === "dawned" || word === "dawning") return "dawns";
+  //return nlp(this.toString(), nlpCompromiseAddedWords).sentences().toPresentTense().out("text")
+  let out = __nlpCompromise("They "+this.toString(), nlpCompromiseAddedWords).verbs().conjugate()[0];
+  return out ? out.PresentTense : this.toString()+"ed";
+};
+
+let __negativeFormMethod = function() {
+  return __nlpCompromise(this.toString()).sentences().toNegative().out("text");
+};
+
+// let ordinalMethod = function() {
+//   return nlp.getOrdinal(this.toString());
+// };
+// let withArticleMethod = function() {
+//   return nlp.getWithArticle(this.toString());
+// };

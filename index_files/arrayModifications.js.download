@@ -1,0 +1,151 @@
+Array.prototype.toString = function () {
+  // default behaviour of arrays when converting to string is to choose a random element.
+  // altering the toString method is how you make it not do this by default (this is how selectMany works)
+  // let items = [];
+  // for(let item of this) {
+  //   items.push(item+"");
+  // }
+  // return chooseRandomTextByOdds(window.root, window.root, items);
+  if(this.length === 0) return "";
+
+  return this.selectOne+"";
+};
+
+Object.defineProperty(Array.prototype, "getOdds", {get:function() { return 1; }});
+Object.defineProperty(Array.prototype, "getSelf", {get:function() { return this; }});
+Object.defineProperty(Array.prototype, "getLength", {get:function() { return this.length; }});
+
+Object.defineProperty(Array.prototype, "consumableList", {get:function() {
+
+  let proxy = new Proxy(this, {
+    alreadyConsumedItems:new Set(),
+    get: function(target, property) {
+      if(property === "selectOne") {
+        let selectedNode = __arraySelectOneMethod.bind(proxy)();
+        if(selectedNode) {
+          this.alreadyConsumedItems.add(selectedNode);
+        }
+        return selectedNode;
+      } else if(property === "$alreadyConsumedItems") {
+        return this.alreadyConsumedItems;
+      } else if(property === "getLength") {
+        return target.length - this.alreadyConsumedItems.size;
+      } else {
+        // TODO: strangely, the return value here seems to be automatically bound to this proxy.
+        // so it also handles toString and valueOf methods like we want it to
+        return target[property];
+      }
+    },
+  });
+  return proxy;
+
+}});
+
+Object.defineProperty(Array.prototype, "selectAll", {get: function() {
+  return this;
+}});
+
+Object.defineProperty(Array.prototype, "selectMany", {value:__selectManyMethod});
+
+Object.defineProperty(Array.prototype, "selectUnique", {value: function(...args) {
+  return this.consumableList.selectMany(...args);
+}});
+
+let __arraySelectOneMethod = function() {
+  //return this[Math.floor(Math.random()*this.length)];
+  let candidates = []; /*{item, odds}*/
+  let i = 0;
+  for(let a of this) {
+    if(a.$nodeType) { // if it's a node
+      candidates.push({item:a, odds:a.$odds});
+    } else if(typeof a === 'string') {
+      let details = __getTextOddsDetails(a);
+      if(details && (details.odds.includes("[") || details.odds.includes("{"))) details.odds = details.odds.evaluateItem; // don't need the if statement, but it's better for performance
+      let odds = details ? Number(details.odds) : 1; // <-- this doesn't allow dynamic odds notation in arrays. Can always add it later if it turns out that it would be useful.
+      
+      if(odds < 0 || isNaN(odds)) {
+        __perchanceError(`The odds of ${a} has evaluated to ${odds < 0 ? "a negative number" : "a non-number"}. It's item number ${i} in the list (the list that starts with ${this[0]}). You may have created this list with selectAll or selectUnique.`);
+      }
+      
+      let item = details ? details.textWithoutOdds : a;
+      candidates.push({item, odds});
+    } else {
+      candidates.push({item:a, odds:1});
+    }
+    i++;
+  }
+
+  if(this.$alreadyConsumedItems) {
+    candidates = candidates.filter(c => !this.$alreadyConsumedItems.has(c.item));
+  }
+
+  let oddsTotal = candidates.reduce((a,v) => { return a+v.odds; }, 0);
+  let stopOddsSum = oddsTotal*Math.random();
+
+  let oddsRunningSum = 0;
+  for(let c of candidates) {
+    oddsRunningSum += c.odds;
+    if(oddsRunningSum >= stopOddsSum) {
+      return c.item;
+    }
+  }
+
+  if(this.$alreadyConsumedItems) {
+    __perchanceError("It looks like your <code>consumableList</code> ran out of items. This is the list in question: "+this.slice(0, 100).join(", "));
+  } else {
+    __perchanceError("Something went wrong! <code>Error: selectOne from array returned nothing.</code> Please report this on <a href='https://reddit.com/r/perchance'>reddit.com/r/perchance</a> since it's likely a bug with the engine.");
+  }
+
+};
+Object.defineProperty(Array.prototype, "selectOne", {get:__arraySelectOneMethod});
+
+
+Object.defineProperty(Array.prototype, Symbol.toPrimitive, {value:function(hint) {
+  return this.toString();
+}});
+
+// don't need this because we've got joinItems, right?
+// Object.defineProperty(Array.prototype, "evaluateItem", {get:function() {
+//   return this.toString();
+// }});
+
+Object.defineProperty(Array.prototype, "joinItems", {value:function(str="") {
+  return this.join(str);
+}});
+
+
+// TODO***: make all methods configurable like in nodeMethods?
+
+Object.defineProperty(Array.prototype, "pluralForm", {get:function() {
+  return this.map(a => a.pluralForm);
+}});
+Object.defineProperty(Array.prototype, "singularForm", {get:function() {
+  return this.map(a => a.singularForm);
+}});
+
+Object.defineProperty(Array.prototype, "pastTense", {get:function() {
+  return this.map(a => a.pastTense);
+}});
+Object.defineProperty(Array.prototype, "presentTense", {get:function() {
+  return this.map(a => a.presentTense);
+}});
+Object.defineProperty(Array.prototype, "futureTense", {get:function() {
+  return this.map(a => a.futureTense);
+}});
+
+Object.defineProperty(Array.prototype, "titleCase", {get:function() {
+  return this.map(a => a.titleCase);
+}});
+Object.defineProperty(Array.prototype, "upperCase", {get:function() {
+  return this.map(a => a.upperCase);
+}});
+Object.defineProperty(Array.prototype, "lowerCase", {get:function() {
+  return this.map(a => a.lowerCase);
+}});
+Object.defineProperty(Array.prototype, "sentenceCase", {get:function() {
+  return this.map(a => a.sentenceCase);
+}});
+
+Object.defineProperty(Array.prototype, "replaceText", {value:function(p1, p2, p3) {
+  return this.map(a => a.replaceText(p1, p2, p3));
+}});

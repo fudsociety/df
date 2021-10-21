@@ -1,0 +1,285 @@
+let __curlyFunctions = [__curlyFunction_Or, __curlyFunction_Import, __curlyFunction_Range, __curlyFunction_S, __curlyFunction_A];
+
+
+function __curlyFunction_Import(rootNode, thisRef, text, leftBlocks, rightBlocks, ctxInfo) {
+  if(!text.includes(":")) return false;
+  let match = /^import:([a-z0-9\-]+)$/.exec(text);
+  if(!match) {
+    return false;
+  } else {
+    let moduleName = match[1];
+    let moduleRef = rootNode.$moduleSpace[moduleName];
+    if( moduleRef ) {
+      return moduleRef;
+    } else {
+      __perchanceError(`You've tried to import a generator that doesn't exist. The generator named '${__escapeHTMLSpecialChars(moduleName)}' was not found. You can see for yourself by visiting that generator: <a href="/${moduleName}">${moduleName}</a>. There's a <a href="/useful-generators">list of useful generators</a> that may help you find what you're looking for.`, ctxInfo.declarationLineNumber);
+      return `(cannot find generator '${moduleName}')`;
+    }
+  }
+}
+
+function __curlyFunction_A(rootNode, thisRef, text, leftBlocks, rightBlocks) {
+  if(text === "a" || text === "A") {
+    let right = __removeHtmlTagsFromBlocksArray(rightBlocks); //rightBlocks.filter(b => b.replace(/<[^>]+?>/g, '').trim() !== "");
+    if(right[0] === undefined || (right[0] && (right[0].trim()[0] === "{"|| right[0].trim()[0] === "["))) {
+      return text === "a" ? "{a}" : "{A}";
+    } else {
+      let aOrAn = __AvsAnSimple.query(right[0].trim().replace(/<[^>]+?>/g, '').split(/[\s$%&*@#,!=+\-.?:;'"(){}\[\]\/<>`~_|]/g)[0].trim());
+      if(text === "A") {
+        if(aOrAn === "a") aOrAn = "A";
+        else aOrAn = "An";
+      }
+      return aOrAn;
+    }
+  } else {
+    return false;
+  }
+}
+
+function __curlyFunction_Range(rootNode, thisRef, text, leftBlocks, rightBlocks) {
+  if(!text.includes("-")) return false;
+
+  let match;
+
+  // TODO: written numbers: {twenty-fifty five} ?
+  // TODO: custom increments: {0-100:0.5} ? not sure about notation yet
+
+  // {1-10}
+  match = /^([0-9]+)-([0-9]+)$/.exec(text);
+  if(match) {
+    let min = Number(match[1]);
+    let max = Number(match[2]);
+    if(min > max) { [min, max] = [max, min]; }
+    return Math.floor(Math.random() * (max - min + 1) + min); // we do not talk about what was here before
+  }
+
+  // {a-z}
+  match = /^([a-z])-([a-z])$/.exec(text);
+  if(match) {
+    let min = Number(match[1].charCodeAt(0));
+    let max = Number(match[2].charCodeAt(0));
+    if(min > max) { [min, max] = [max, min]; }
+    return String.fromCharCode( min+Math.round(Math.random()*(max-min)) );
+  }
+
+  // {A-Z}
+  match = /^([A-Z])-([A-Z])$/.exec(text);
+  if(match) {
+    let min = Number(match[1].charCodeAt(0));
+    let max = Number(match[2].charCodeAt(0));
+    if(min > max) { [min, max] = [max, min]; }
+    return String.fromCharCode( min+Math.round(Math.random()*(max-min)) );
+  }
+
+  return false;
+
+}
+
+function __curlyFunction_S(rootNode, thisRef, text, leftBlocks, rightBlocks) {
+  // there are {1..10} person{s} <-- can't do this, must manually handle the 2 cases
+  // I have {1..10} coin{s} <-- can do this :)
+  if(text === "s") {
+
+    // TODO: fix this with some proper NLP to handle written numbers: "twenty five"
+
+    // search through leftBlocks backwards for the first number.
+    // if a non-text block is found before a number is, return "{s}"
+    for(let i = leftBlocks.length-1; i >= 0; i--) {
+      let block = leftBlocks[i];
+      if(block[0] === "{" || block[0] === "[") {
+        return "{s}";
+      }
+      let numbers = block.split(/[\s,!?\-()/.]+/).filter(a => /[0-9]+/.test(a));
+      if(numbers.length > 0) {
+        let num = Number(numbers[numbers.length-1]);
+        return num === 1 ? "" : "s";
+      }
+    }
+
+  }
+  return false;
+
+}
+
+function __curlyFunction_Or(rootNode, thisRef, text, leftBlocks, rightBlocks) {
+  if(!text.includes("|")) return false;
+
+  // no need to evaluate the arguments. we can just extract them (with their odds)
+  // and select a random one. We could evaluate the args but in that case it would be
+  // important that we extract all the *arguments* first (and their odds), then
+  // choose a random one (otherwise NEW "|" and "^" characters could end up in the evaluated text)
+  // and mess up our interpretation of the arguments.
+
+  // pulled the bulk of this curlyFunction_Or function out into its own function for use elsewhere:
+  let args = __splitUpCurlyOrBlock(text);
+  if(args === false) return false;
+
+  // now we need to extract odds and choose a random one
+  // note that in curly "or" notation, *spaces matter* before and after the text.
+  // thus we don't trim the string after extracting the odds.
+
+  return __chooseRandomTextByOdds(rootNode, thisRef, args);
+
+  // TODO: sort out Array.toString
+  // LOOK AT Array.toString definition - try to extract out a common function
+  // (or you could just call) .toString on `parts` lol
+  // hmm. Array.toString relies on window.root being available which isn't great.
+  // I think first step is to test whether it works, then extract out as much as I
+  // can into functions. Array.toString is more of a handy hack - I don't want to rely
+  // on it if I can help it.
+
+
+}
+
+function __splitUpCurlyOrBlock(text) {
+  // note this returns false if it's not a valid curly OR block.
+  // also, it expects that the outer curly brackets have already been removed
+
+  // the easiest way to be find all the unescaped "|" characters is to split it
+  // up and then search through *only text blocks*:
+  let blocks = __splitTextAtAllBlocks(text);
+  let args = [];
+  let currentArg = "";
+  for(let j = 0; j < blocks.length; j++) {
+    let block = blocks[j];
+    if(block[0] !== "{" && block[0] !== "[") {
+
+      let escaped = false;
+      for(let i = 0; i < block.length; i++) {
+        if(i === 0) {
+          // if we're at the start of the block, it's not escaped:
+          escaped = false;
+        } else {
+          // if we're not at start, it's not escaped if the last char wasn't a backslash:
+          if(block[i-1] !== "\\") { escaped = false; }
+        }
+        // toggle escapedness at each consecutive backslash:
+        if(block[i] === "\\") { escaped = !escaped; }
+
+        if(block[i] === "|" && !escaped) {
+
+          currentArg += block.substr(0,i);
+          args.push(currentArg);
+          currentArg = "";
+          block = block.substr(i+1);
+          i = -1; // will get incremented to zero on loop
+
+        } else if(i === block.length-1) {
+
+          currentArg += block;
+
+        }
+
+      }
+      if(j === blocks.length-1) {
+        args.push(currentArg);
+      }
+
+    } else {
+      currentArg += block;
+      if(j === blocks.length-1) {
+        args.push(currentArg);
+      }
+    }
+  }
+
+  if(args.length === 0 || args.length === 1) {
+    // this is not the correct curly function to interpret this curly block
+    return false;
+  }
+
+  return args;
+
+}
+
+function __chooseRandomTextByOdds(rootNode, thisRef, textArray) {
+
+  // extract odds
+  let items = [];
+  for(let text of textArray) {
+    text = text+""; // cast to string (needed for Array.toString);
+    let odds, textWithoutOdds;
+    let details = __getTextOddsDetails(text);
+
+    // TODO: fix this up to suit the new way of doign things
+
+    if(!details) {
+      textWithoutOdds = text;
+      odds = 1;
+      items.push({text:textWithoutOdds, odds});
+      continue;
+    }
+
+    textWithoutOdds = details.textWithoutOdds;
+    odds = details.odds;
+
+    if(typeof odds === 'string' && (odds[0] === "[" || /[0-9]/.test(odds[0]) )) { // if it's a dynamic odds expression:
+
+      let evaluatedOdds = __oddsTextToNumber(rootNode, thisRef, odds);
+
+      if(evaluatedOdds < 0) {
+        __perchanceError(`The dynamic odds expression "${__escapeHTMLSpecialChars(odds)}" in ${__escapeHTMLSpecialChars("{"+textArray.join("|")+"}")} resolved to a *negative* number. Odds must be positive numbers, since it doesn't make sense for something to have a negative chance of being selected. Remember that you can try executing this odds expression in the console (bottom-left panel in the editor interface) and see what it yeilds. Also remember that "^" is a special character that is used to declare the probability that the item will be selected, and if you want to use it as a literal character (i.e. not to declare odds), then you need to put a "backslash" before it like so: "\\^"`)
+        return false;
+      }
+      if(evaluatedOdds === false) {
+        __perchanceError(`The dynamic odds expression "${__escapeHTMLSpecialChars(odds)}" in ${__escapeHTMLSpecialChars("{"+textArray.join("|")+"}")} didn't resolve to a number. Remember that you can try executing this odds expression in the console (bottom-left panel in the editor interface) and see what it yeilds. Also remember that "^" is a special character that is used to declare the probability that the item will be selected, and if you want to use it as a literal character (i.e. not to declare odds), then you need to put a "backslash" before it like so: "\\^"`)
+        return false;
+      }
+      odds = evaluatedOdds;
+
+    }
+
+    items.push({text:textWithoutOdds, odds});
+
+  }
+
+
+  // select one based on odds
+  let oddsSum = 0;
+  let oddsArray = [];
+  for(let item of items) {
+    oddsSum += item.odds;
+    oddsArray.push(item.odds);
+  }
+
+  if(items.length === 0) {
+    console.warn(`Warning: Tried to get random selection from an empty array?`);
+    return "";
+  }
+
+  // choose random position in oddsSum range
+  let oddsSumStopPoint = oddsSum*Math.random();
+  let selectedItem;
+  let oddsSumForChoice = 0;
+
+  for(let i = 0; i < items.length; i++) {
+    oddsSumForChoice += oddsArray[i];
+    if(oddsSumForChoice >= oddsSumStopPoint) {
+      selectedItem = items[i];
+      break;
+    }
+  }
+
+  return selectedItem.text;
+
+}
+
+// doesn't need to be perfect! just a rough clean to help the {a/A} blocks
+function __removeHtmlTagsFromBlocksArray(blocks) {
+  const joinTag = "sdoxci892387uoooJOINoooTAGooohkdsiyygjd970sjgs";
+  let str = blocks.join(joinTag);
+  let charArr = str.split("");
+  let inTag = false;
+  for(let i = 0; i < charArr.length; i++) {
+    if(charArr[i] === "<" && !inTag) {
+      inTag = true;
+      charArr[i] = "";
+    } else if(charArr[i] === ">" && inTag) {
+      inTag = false;
+      charArr[i] = "";
+    } else if(inTag) {
+      charArr[i] = "";
+    }
+  }
+  return charArr.join("").split(joinTag).filter(c => c.trim() !== "");
+}

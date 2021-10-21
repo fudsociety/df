@@ -1,0 +1,140 @@
+Object.defineProperty(String.prototype, "titleCase", {get:__titleCaseMethod});
+Object.defineProperty(Number.prototype, "titleCase", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "titleCase", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "sentenceCase", {get:__sentenceCaseMethod});
+Object.defineProperty(Number.prototype, "sentenceCase", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "sentenceCase", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "upperCase", {get:__upperCaseMethod});
+Object.defineProperty(Number.prototype, "upperCase", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "upperCase", {get:function(){return this.valueOf();}})
+
+Object.defineProperty(String.prototype, "lowerCase", {get:__lowerCaseMethod});
+Object.defineProperty(Number.prototype, "lowerCase", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "lowerCase", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "replaceText", {value:__replaceTextMethod});
+Object.defineProperty(Number.prototype, "replaceText", {value:__replaceTextMethod});
+Object.defineProperty(Boolean.prototype, "replaceText", {value:__replaceTextMethod});
+
+Object.defineProperty(String.prototype, "pastTense", {get:__pastTenseMethod});
+Object.defineProperty(Number.prototype, "pastTense", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "pastTense", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "presentTense", {get:__presentTenseMethod});
+Object.defineProperty(Number.prototype, "presentTense", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "presentTense", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "futureTense", {get:__futureTenseMethod});
+Object.defineProperty(Number.prototype, "futureTense", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "futureTense", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "getSelf", {get:function() { return this+""; }});
+Object.defineProperty(Number.prototype, "getSelf", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "getSelf", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "getOdds", {get:function() { return 1; }});
+Object.defineProperty(Number.prototype, "getOdds", {get:function(){ return 1; }});
+Object.defineProperty(Boolean.prototype, "getOdds", {get:function(){ return 1; }});
+
+// WHAT IS THIS?
+Object.defineProperty(String.prototype, "getName", {get:function() {
+  return this+"";
+}});
+Object.defineProperty(Number.prototype, "getName", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "getName", {get:function(){return this.valueOf();}})
+
+
+Object.defineProperty(String.prototype, "evaluateItem", {get:function() {
+  return __evaluateText(root, root, this.valueOf(), {declarationLineNumber:null});
+  //return this.valueOf();
+}});
+Object.defineProperty(Number.prototype, "evaluateItem", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "evaluateItem", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, Symbol.toPrimitive, {value:function(hint) {
+  return this.valueOf();
+}});
+// i don't think these two are necessary?
+Object.defineProperty(Number.prototype, Symbol.toPrimitive, {value:function(hint) {
+  return this.valueOf();
+}});
+Object.defineProperty(Boolean.prototype, Symbol.toPrimitive, {value:function(hint) {
+  return this.valueOf();
+}});
+
+
+Object.defineProperty(String.prototype, "selectMany", {value:__selectManyMethodStringNum});
+Object.defineProperty(Number.prototype, "selectMany", {value:__selectManyMethodStringNum});
+Object.defineProperty(Boolean.prototype, "selectMany", {value:__selectManyMethodStringNum});
+function __selectManyMethodStringNum(num) {
+  let arr = [];
+  for(let i = 0; i < num; i++) {
+    arr.push(this);
+  }
+  // overwrite default array behaviour (selects a random one)
+  // in the case where they don't specify a join() after the repeat:
+  arr.toString = function() { return this.join(""); };
+  return arr;
+}
+
+Object.defineProperty(String.prototype, "selectOne", {get:function() {
+  return this.valueOf();
+}});
+Object.defineProperty(Number.prototype, "selectOne", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "selectOne", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "singularForm", {get:function(n) {
+  let input = this;
+  let output = __nlpCompromise(input).nouns().toSingular().out("text");
+  return output === "" ? input : output;
+}});
+Object.defineProperty(Number.prototype, "singularForm", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "singularForm", {get:function(){return this.valueOf();}});
+
+Object.defineProperty(String.prototype, "pluralForm", {get:function(n) {
+  let input = this;
+  let output = __nlpCompromise(input).nouns().toPlural().out("text");
+  return output === "" ? input : output;
+}});
+Object.defineProperty(Number.prototype, "pluralForm", {get:function(){return this.valueOf();}});
+Object.defineProperty(Boolean.prototype, "pluralForm", {get:function(){return this.valueOf();}});
+
+// TODO***: add the rest of the node methods here and to Array (e.g. pastTense, etc.)
+
+// Object.defineProperty(String.prototype, "shuffleCharacters", {value:function(numShuffles) {
+//
+//   if(numShuffles === undefined) {
+//
+//     var array = this.split("");
+//     var currentIndex = array.length, temporaryValue, randomIndex;
+//     // While there remain elements to shuffle...
+//     while (0 !== currentIndex) {
+//       // Pick a remaining element...
+//       randomIndex = Math.floor(Math.random() * currentIndex);
+//       currentIndex -= 1;
+//       // And swap it with the current element.
+//       temporaryValue = array[currentIndex];
+//       array[currentIndex] = array[randomIndex];
+//       array[randomIndex] = temporaryValue;
+//     }
+//     return array.join("")
+//
+//   } else {
+//
+//     let array = this.split("");
+//     for(let i = 0; i < numShuffles; i++) {
+//       let i1 = Math.floor(array.length*Math.random());
+//       let i2 = Math.floor(array.length*Math.random());
+//       let c1 = array[i1];
+//       let c2 = array[i2];
+//       array[i1] = c2;
+//       array[i2] = c1;
+//     }
+//     return array.join("");
+//     // TODO: why not join back into a string?
+//
+//   }
+//
+// }});

@@ -1,0 +1,141 @@
+function __evaluateSquareBlock(root, thisRef, expression, ctxInfo={}) {
+
+  // NOTE: if the `with` keyword ever gets actually deprecated (very, very unlikely - 2ality's
+  // article is a bit misleading I think), you can just craft up a function declaration with each
+  // of the root variables so they get passed in as the evaled function's arguments (simple!)
+  // new Function(param1, ..., paramN, funcBody) -> http://www.2ality.com/2014/01/eval.html
+  // only thing is: i need to make sure the getters are still triggered on the proxy when I grab the properties (why wouldn't they be?). hmm
+  // oh but also I don't want to trigger ALL of them (could be a couple of thousand params for every single square bloc executed...)
+
+  let originalExpression = expression;
+  expression = expression.trim();
+  //expression = prependReturnKeywordIfNeeded(expression);
+  //let evalJSCode = eval.bind(thisRef);
+
+  // **WITHIN a node**, we don't want references to `this` to result in "$output"
+  // Otherwise we're very limited in terms of how we can interact with "local" items (can't use selectOne, etc. EVEN IN `$output` (since it would reference itself no matter what))
+  // Note that we can't just temporarily set $output to undefined, because the square block that we're evaluating could reference another list which references THIS list and expects $output to work. We only want uses of `this` in this square block (and uses of `this` within chained methods like selectOne in this example: `[this.selectOne]` - hence the need to bind functions to this proxy)
+  // REF:kjhfw927f63ohwkgw82g
+  let proxiedThisRef = undefined;
+  if(Object.getOwnPropertyDescriptor(thisRef, "$output")) {
+
+    proxiedThisRef = new Proxy(thisRef, {
+      get: function(target, property) {
+        if(property === "$output") {
+          return undefined; // <-- we pretend that this list doesn't have an $output property so that node methods like toString don't use it.
+        } else if(property === "___$outputShouldBeHidden") {
+          return true; // this is a hack to tell the consumableList proxy to hide the $output property (since we can only bind a function to one of the proxies)
+        } else if(property === "___proxyTarget") {
+          return thisRef;
+        } else {
+
+          let desc = Object.getOwnPropertyDescriptor(target, property);
+          if(!desc) {
+            //perchanceError(`The '${property}' property doesn't exist within '${target.$text}'.`, ctxInfo.declarationLineNumber);
+            return undefined;
+          }
+          
+          if(desc.get) {
+            return desc.get.bind(proxiedThisRef)(); // <-- need to bind to this proxy so that the $output property is hidden from all successively chained functions - e.g. this.consumableList.selectOne.toString()
+          } else if(desc.value && typeof desc.value === 'function') {
+            return desc.value.bind(proxiedThisRef);
+          } else {
+            return target[property];
+          }
+
+        }
+      }
+    });
+
+  }
+
+  try {
+
+    let tempHasHandlerHolder;
+    if(root.___isProxy) {
+      tempHasHandlerHolder = root.___proxyHandler.has;
+      root.___proxyHandler.has = window.__rootProxyHasHandler_Greedy.bind(root.___proxyHandler);
+    }
+    let result = (function(){ return eval("with(root){"+expression+"}"); }).apply(proxiedThisRef || thisRef);
+    if(root.___isProxy) root.___proxyHandler.has = tempHasHandlerHolder; //.bind(root.___proxyHandler);
+
+    if(result === undefined) {
+      __perchanceError(`The expression '[${__escapeHTMLSpecialChars(originalExpression)}]' returned nothing (<code>undefined</code>). There doesn't seem to be anything particularly wrong with your <i>syntax</i>, but you may be trying to reference a list, property or function that doesn't exist. Here are some common causes of this error: <ul><li>You tried to reference a list/variable that you haven't created. For example, if you wrote [animal], but there was no top-level list called "animal", then you would get this error</li><li>If you misspell a property/function name, then you'll get this error. For example "[noun.pluralFormm]" would produce this error because "pluralForm" has been misspelled</li><li>If you try to access a property of an object that doesn't exist, or that evaluates to something which doesn't exist, then you'll get this error.</li></ul> These errors can sometimes be particularly hard to debug, so after you've given it your best shot, please post a question over on the <a href="http://reddit.com/r/perchance">perchance community</a> and a friendly community member will help you out :)`, ctxInfo.declarationLineNumber);
+      return undefined;
+    } else {
+      if(typeof result === 'string' && String(Number(result)) === result) {
+        return Number(result);
+      } else {
+        return result;
+      }
+    }
+  } catch(e) {
+    if(e.message.toLowerCase().includes("call stack size")) {
+      __perchanceError(`There's a problem with the syntax of this expression: '[${__escapeHTMLSpecialChars(originalExpression)}]'. Here's the message that was returned when execution failed: <b>${__escapeHTMLSpecialChars(e.message.slice(0, 5000))}</b>. It may be that you've accidentally created an "infinite loop" by making a list reference itself, or something like that.`, ctxInfo.declarationLineNumber);
+    } else if(e.message.toLowerCase().includes("token") && (originalExpression.includes("“") || originalExpression.includes("”"))) {
+      __perchanceError(`There's a problem with the syntax of this expression: '[${__escapeHTMLSpecialChars(originalExpression)}]'. Here's the message that was returned when execution failed: <b>${__escapeHTMLSpecialChars(e.message.slice(0, 5000))}</b>. It looks like you might be using "curly quotes" (like this: <code>“blah”</code>) instead of normal quotes (like this: <code>"blah"</code>)? Perchance requires that you use normal quotes for text inside square brackets (e.g. <code>[a = animal.selectOne,""]</code>).`, ctxInfo.declarationLineNumber);
+    } else {
+      __perchanceError(`There's a problem with the syntax of this expression: '[${__escapeHTMLSpecialChars(originalExpression)}]'. Here's the message that was returned when execution failed: <b>${__escapeHTMLSpecialChars(e.message)}</b>. Here are some common mistakes: <ul><li>you tried to reference a variable/list that you haven't created</li><li>list names are case-sensitive: "[animal]" is different to [Animal], and you should use underscores in list names instead of spaces</li></ul>`, ctxInfo.declarationLineNumber);
+    }
+    return "(syntax error)";
+  }
+}
+
+// function prependReturnKeywordIfNeeded(expression) {
+//   // if single line without return statement, add it
+//   if(/\n/.test(expression) || /(^|\s|;|\}|\{|\)|\()return\s/.test(expression)) {
+//     return expression;
+//   } else {
+//     return "return "+expression;
+//   }
+// }
+
+
+// function expressionHasSemiColon(text) {
+//
+//   let escaped = false;
+//   let inJSExprString1 = false;
+//   let inJSExprString2 = false;
+//   let inJSExprString3 = false;
+//   let inRegExp = false;
+//
+//   for(let i = 0; i < text.length; i++) {
+//     if(i !== 0) {
+//       if(text[i-1] !== "\\") { escaped = false; }
+//     }
+//     if(text[i] === "\\") { escaped = !escaped; }
+//
+//     ////////////////////////////////////
+//     //           skip regexp          //
+//     ////////////////////////////////////
+//     if(!inRegExp && !inJSExprString1 && !inJSExprString2 && !inJSExprString3 && text[i] === "/") { inRegExp = true; continue; }
+//     if(inRegExp && text[i] !== "/") { continue; }
+//     if(inRegExp && !escaped && text[i] === "/") { inRegExp = false; continue; }
+//
+//
+//     ////////////////////////////////////
+//     //          skip strings          //
+//     ////////////////////////////////////
+//     if(!inJSExprString1 && !inRegExp && text[i] === "\"") { inJSExprString1 = true; continue; }
+//     if(inJSExprString1 && !escaped && text[i] !== "\"") { continue; }
+//     if(inJSExprString1 && !escaped && text[i] === "\"") { inJSExprString1 = false; continue; }
+//
+//     if(!inJSExprString2 && !inRegExp && text[i] === "'") { inJSExprString2 = true; continue; }
+//     if(inJSExprString2 && !escaped && text[i] !== "'") { continue; }
+//     if(inJSExprString2 && !escaped && text[i] === "'") { inJSExprString2 = false; continue; }
+//
+//     if(!inJSExprString3 && !inRegExp && text[i] === "`") { inJSExprString3 = true; continue; }
+//     if(inJSExprString3 && !escaped && text[i] !== "`") { continue; }
+//     if(inJSExprString3 && !escaped && text[i] === "`") { inJSExprString3 = false; continue; }
+//
+//     if(!inJSExprString3 && !escaped && text[i] === "`") {
+//
+//     if(!inJSExprString1 && !inJSExprString2 && !inJSExprString3 && !inRegExp) {
+//
+//     }
+//
+//   }
+//
+//   return false;
+//
+// }
